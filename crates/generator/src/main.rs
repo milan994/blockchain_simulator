@@ -13,7 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::{sync::broadcast, task::JoinHandle};
 
 /// Simulated blockchain block.
-#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize, Clone)]
 struct Block {
     /// Position in the chain
     index: u64,
@@ -29,31 +29,100 @@ struct Block {
     previous_hash: String,
 }
 
-impl Block {
-    fn new() -> Block {
-        Block {
-            index: 0,
-            timestamp: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_millis(),
-            transactions: vec![String::from("No transtactions")],
-            nonce: 0,
-            hash: "0".to_string(),
-            previous_hash: String::from("0"),
+// Cest pattern kad imas neku strukturu sa mnogo field-ova je ovaj builder kao. Mislim da je
+// jednostavno, mozes samo procitati kod.
+#[derive(Debug, Default)]
+struct BlockBuilder {
+    index: u64,
+    timestamp: Option<u128>,
+    transactions: Option<Vec<String>>,
+    nonce: Option<u64>,
+    hash: Option<String>,
+    previous_hash: Option<String>,
+}
+
+impl BlockBuilder {
+    fn new(index: u64) -> Self {
+        Self {
+            index,
+            // Default trait je jako koristan, isto pogotovo ako struct ima puno fieldova. Ovo
+            // ispod znaci, sve ostale fieldove stavi da budu default. Uopsteno ova sintaksa znaci
+            // - fieldove koje sam naveo stavi da budu ta i ta vrednost, sve posle `..` stavi da
+            // budu iste vrednosti kao ovaj drugi struct (istog tipa). Primer:
+            //
+            // let a: SomeType = ...;
+            // let b = SomeType {
+            //     field1: 1,
+            //     ..a,
+            // };
+            ..Default::default()
         }
     }
 
-    fn compute_hash(&self) -> String {
-        let mut hasher = Sha256::new();
-        let block_data = format!(
-            "{}{}{:?}{}{}",
-            self.index, self.timestamp, self.transactions, self.nonce, self.previous_hash
+    fn new_genesis() -> Self {
+        Self::new(0)
+    }
+
+    // Primeti kako neke funkcije dodaju field kroz parametar a neke, poput ove, ne primaju
+    // parametar nego samo racunaju vrednost fielda.
+    fn with_timestamp(mut self) -> Self {
+        self.timestamp = Some(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("Time went backwards")
+                .as_millis(),
         );
+        self
+    }
 
-        hasher.update(block_data.as_bytes());
+    fn with_transactions(mut self, transactions: Vec<String>) -> Self {
+        self.transactions = Some(transactions);
+        self
+    }
 
-        format!("{:x}", hasher.finalize())
+    fn with_nonce(mut self, nonce: u64) -> Self {
+        self.nonce = Some(nonce);
+        self
+    }
+
+    fn with_previous_hash(mut self, previous_hash: String) -> Self {
+        self.previous_hash = Some(previous_hash);
+        self
+    }
+
+    // Ova funkcija ima nekoliko stvari u sebi koje nije lose skontati.
+    fn with_hash(mut self) -> Self {
+        let mut hasher = Sha256::new();
+
+        // 1. `to_le_bytes` / `from_le_bytes` i njihove `be` verzije
+        hasher.update(self.index.to_le_bytes());
+        // 2. `unwrap_or_default` i ostali `kombinatori` nad `Option<T> i Result<T>`
+        hasher.update(self.nonce.unwrap_or_default().to_le_bytes());
+        // 3. `as_ref / as_mut` nad option-om kad ne zelis da move-ujes T iz Option<T>
+        hasher.update(self.previous_hash.as_ref().expect("Missing previous_hash"));
+        hasher.update(
+            self.timestamp
+                .as_ref()
+                .expect("Missing timestamp")
+                .to_le_bytes(),
+        );
+        let transactions = self.transactions.unwrap_or_default();
+        hasher.update(transactions.join(",").as_bytes());
+        self.transactions = Some(transactions);
+
+        self.hash = Some(format!("{:x}", hasher.finalize()));
+        self
+    }
+
+    fn build(self) -> Block {
+        Block {
+            index: self.index,
+            timestamp: self.timestamp.expect("Missing timestamp"),
+            transactions: self.transactions.unwrap_or_default(),
+            nonce: self.nonce.unwrap_or_default(),
+            hash: self.hash.expect("Missing hash"),
+            previous_hash: self.previous_hash.expect("Missing previous_hash"),
+        }
     }
 }
 
@@ -141,23 +210,36 @@ async fn block_generator(state: AppState) -> JoinHandle<()> {
 
             tokio::time::sleep(time::Duration::from_secs(3)).await;
 
-            let mut block = Block::new();
             // first (Genesis block), do not increment it's index and leave it's block.previous_hash to zero
-            if !is_genesis {
-                block.index = block_index;
-                block.previous_hash = previous_hash;
-                block.hash = block.compute_hash();
+            let block = if !is_genesis {
+                let block = BlockBuilder::new(block_index)
+                    .with_nonce(0)
+                    .with_previous_hash(previous_hash)
+                    .with_timestamp()
+                    .with_transactions(vec![])
+                    .with_hash()
+                    .build();
                 previous_hash = block.hash.clone(); // possible performance impact because of .clone(), FIXME
                 block_index += 1;
 
                 tracing::debug!("Block:\n{:#?}", block);
+
+                block
             } else {
                 is_genesis = false;
-                block.hash = block.compute_hash();
+                let block = BlockBuilder::new_genesis()
+                    .with_nonce(0)
+                    .with_previous_hash(previous_hash)
+                    .with_timestamp()
+                    .with_transactions(vec![])
+                    .with_hash()
+                    .build();
                 previous_hash = block.hash.clone(); // possible performance impact because of .clone(), FIXME
                 block_index += 1;
                 tracing::debug!("Genesis Block:\n{:#?}", block);
-            }
+
+                block
+            };
 
             match state.tx.send(block.clone()) {
                 Ok(_) => tracing::debug!("Sent: {:#?}", block),
