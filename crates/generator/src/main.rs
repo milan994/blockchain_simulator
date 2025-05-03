@@ -12,15 +12,21 @@ use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::{sync::broadcast, task::JoinHandle};
 
+/// Simulated blockchain block.
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 struct Block {
-    // simulated blockchain block
-    index: u64,                // position in the chain
-    timestamp: u128,           // time when block is made ------ update using real timestamp crate
-    transactions: Vec<String>, // transactions
-    nonce: u64,                // used for proof-of-work
-    hash: String,              // hash which will be caluculated
-    previous_hash: String,     // hash of previous block
+    /// Position in the chain
+    index: u64,
+    /// Time when block is made ------ update using real timestamp crate
+    timestamp: u128,
+    /// Transactions
+    transactions: Vec<String>,
+    /// Used for proof-of-work
+    nonce: u64,
+    /// Hash which will be calculated
+    hash: String,
+    /// Hash of previous block
+    previous_hash: String,
 }
 
 impl Block {
