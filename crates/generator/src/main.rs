@@ -8,7 +8,6 @@ use axum::{
     routing::any,
 };
 use core::time;
-use serde;
 use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::{sync::broadcast, task::JoinHandle};
@@ -123,13 +122,13 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
 ///
 /// 'state' is used to transmit newly created 'Block'.
 async fn block_generator(state: AppState) -> JoinHandle<()> {
-    let mut genesis_block: bool = true;
+    let mut is_genesis: bool = true;
     let mut previous_hash: String = String::from("0");
     let mut block_index: u64 = 0;
 
     tracing::debug!("Entering block_generator\n");
 
-    let task_handle = tokio::spawn(async move {
+    tokio::spawn(async move {
         tracing::debug!("Entering tokio async task");
         loop {
             tracing::debug!("Entering loop\n");
@@ -138,7 +137,7 @@ async fn block_generator(state: AppState) -> JoinHandle<()> {
 
             let mut block = Block::new();
             // first (Genesis block), do not increment it's index and leave it's block.previous_hash to zero
-            if false == genesis_block {
+            if !is_genesis {
                 block.index = block_index;
                 block.previous_hash = previous_hash;
                 block.hash = block.compute_hash();
@@ -147,7 +146,7 @@ async fn block_generator(state: AppState) -> JoinHandle<()> {
 
                 tracing::debug!("Block:\n{:#?}", block);
             } else {
-                genesis_block = false;
+                is_genesis = false;
                 block.hash = block.compute_hash();
                 previous_hash = block.hash.clone(); // possible performance impact because of .clone(), FIXME
                 block_index += 1;
@@ -159,7 +158,5 @@ async fn block_generator(state: AppState) -> JoinHandle<()> {
                 Err(err) => tracing::debug!("Error sending block: {}", err),
             }
         }
-    });
-
-    task_handle
+    })
 }
