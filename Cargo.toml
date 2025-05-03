@@ -13,6 +13,8 @@ sha2 = "0.10.8"
 sha256 = "1.6.0"
 tokio = { version = "1.44.2", features = ["full"] }
 tokio-tungstenite = "0.26.2"
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 url = "2.5.4"
 uuid = "1.16.0"
 ws = "0.9.2"

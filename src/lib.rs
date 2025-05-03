@@ -1,7 +1,6 @@
 //! Server broadcasts blockchain Blocks on the WebSocket.
-//! URL used: 127.0.0.1:7878
+//! URL used: 127.0.0.1:7879
 //! All implementation is in one file (this one) since it is a small exercise.
-
 use core::time;
 use axum::{
     extract::ws::{WebSocketUpgrade, WebSocket, Message},
@@ -12,7 +11,7 @@ use axum::{
 use sha2::{Sha256, Digest};
 use tokio::{sync::broadcast, task::JoinHandle};
 use serde;
-use axum_server::Server;
+use axum_server;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 
@@ -69,7 +68,7 @@ struct AppState {                   // name chosen basd on example from axum cra
 ///
 /// The `fn_blockchain_simulator_main` function will panic if parsing of URL address fails and 
 /// if binding to address fails.
-pub async fn fn_blockchain_simulator_main() {
+pub async fn fn_blockchain_simulator_main() -> JoinHandle<()> {
     let (tx, _) = broadcast::channel::<Block>(100); // capacity 100 just for the exercise
     let state = AppState {tx: tx.clone()};
 
@@ -79,20 +78,23 @@ pub async fn fn_blockchain_simulator_main() {
 
     let task_join_handle = block_generator(state.clone()).await;
 
-    let addr = "127.0.0.1:7878".parse().unwrap();
+    let addr = "127.0.0.1:7879".parse().unwrap();
 
-    println!("Server running at ws://127.0.0.1:7878");
+    tracing::info!("blockchain_simulator server running at ws://127.0.0.1:7879");
 
-    Server::bind(addr)
+    let server_handle  =  tokio::spawn(async move {
+        axum_server::Server::bind(addr)
         .serve(app.into_make_service())
         .await
         .unwrap();
-    
+    });
+
     match task_join_handle.await {
-        Ok(_) => println!("Successful creation of a blockchain!\n"),
-        Err(err) => println!("Error: {err}\n"),        
+        Ok(_) => tracing::info!("Successful creation of a blockchain!\n"),
+        Err(err) => tracing::error!("Error with task join handle: {err}\n"),        
     }
 
+    server_handle
 }
 
 /// When the HTTP client successfully upgrades to a WebSocket, 
@@ -132,18 +134,18 @@ async fn block_generator (state: AppState) -> JoinHandle<()> {
     let mut previous_hash: String = String::from("0");
     let mut block_index: u64 = 0;    
 
-    // println!("Entering block_generator\n"); // debug print
+    tracing::debug!("Entering block_generator\n");
 
     let task_handle = tokio::spawn(async move {
-        // println!("Entering tokio async task"); // debug print
+        tracing::debug!("Entering tokio async task");
         loop {
-            // println!("Entering loop\n"); // debug print
+            tracing::debug!("Entering loop\n");
 
             tokio::time::sleep(time::Duration::from_secs(3)).await;
 
             let mut block = Block::new();
     
-            // detect first (Genesis block), do not increment it's index and leave it's block.previous_hash to zero
+            // first (Genesis block), do not increment it's index and leave it's block.previous_hash to zero
             if false == genesis_block {
                 block.index = block_index;
                 block.previous_hash = previous_hash;
@@ -151,19 +153,19 @@ async fn block_generator (state: AppState) -> JoinHandle<()> {
                 previous_hash = block.hash.clone(); // possible performance impact because of .clone(), FIXME
                 block_index += 1;
     
-                println!("Block:\n{:#?}", block);
+                tracing::debug!("Block:\n{:#?}", block);
             } else {
                 genesis_block = false;
                 block.hash = block.compute_hash();
                 previous_hash = block.hash.clone(); // possible performance impact because of .clone(), FIXME
                 block_index += 1;
     
-                println!("Genesis Block:\n{:#?}", block);
+                tracing::debug!("Genesis Block:\n{:#?}", block);
             }
 
             match state.tx.send(block.clone()) {
-                Ok(_) => println!("Sent: {:#?}\n", block),
-                Err(err) => println!("Error: {err}\n"),
+                Ok(_) => tracing::debug!("Sent: {:#?}", block),
+                Err(err) => tracing::debug!("Error sending block: {}", err),
             }    
         }
     });
