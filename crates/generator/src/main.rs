@@ -30,9 +30,9 @@ struct Block {
     /// Used for proof-of-work
     nonce: u64,
     /// Hash which will be calculated
-    hash: String,
+    hash: [u8; 32],
     /// Hash of previous block
-    previous_hash: String,
+    previous_hash: [u8; 32],
 }
 
 // Cest pattern kad imas neku strukturu sa mnogo field-ova je ovaj builder kao. Mislim da je
@@ -43,8 +43,8 @@ struct BlockBuilder {
     timestamp: Option<u128>,
     transactions: Option<Vec<String>>,
     nonce: Option<u64>,
-    hash: Option<String>,
-    previous_hash: Option<String>,
+    hash: Option<[u8; 32]>,
+    previous_hash: Option<[u8; 32]>,
 }
 
 impl BlockBuilder {
@@ -91,7 +91,7 @@ impl BlockBuilder {
         self
     }
 
-    fn with_previous_hash(mut self, previous_hash: String) -> Self {
+    fn with_previous_hash(mut self, previous_hash: [u8; 32]) -> Self {
         self.previous_hash = Some(previous_hash);
         self
     }
@@ -116,7 +116,7 @@ impl BlockBuilder {
         hasher.update(transactions.join(",").as_bytes());
         self.transactions = Some(transactions);
 
-        self.hash = Some(format!("{:x}", hasher.finalize()));
+        self.hash = Some(hasher.finalize().into());
         self
     }
 
@@ -203,54 +203,54 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
 ///
 /// 'state' is used to transmit newly created 'Block'.
 async fn block_generator(state: Arc<AppState>) -> JoinHandle<()> {
-    let mut is_genesis: bool = true;
-    let mut previous_hash: String = String::from("0");
-    let mut block_index: u64 = 0;
-
     tracing::debug!("Entering block_generator\n");
 
     tokio::spawn(async move {
         tracing::debug!("Entering tokio async task");
+
+        let mut previous_hash = [0; 32];
+
+        let genesis = BlockBuilder::new_genesis()
+            .with_nonce(0)
+            .with_previous_hash(previous_hash)
+            .with_timestamp()
+            .with_transactions(vec![])
+            .with_hash()
+            .build();
+        tracing::debug!("Genesis Block:\n{:#?}", genesis);
+
+        match state.tx.send(genesis.clone()) {
+            Ok(_) => tracing::debug!("Sent: {:#?}", genesis),
+            Err(err) => tracing::debug!("Error sending block: {}", err),
+        }
+
+        // Start from GENESIS + 1
+        let mut block_index: u64 = 1;
+
+        tokio::time::sleep(time::Duration::from_secs(3)).await;
+
         loop {
             tracing::debug!("Entering loop\n");
 
-            tokio::time::sleep(time::Duration::from_secs(3)).await;
+            let block = BlockBuilder::new(block_index)
+                .with_nonce(0)
+                .with_previous_hash(previous_hash)
+                .with_timestamp()
+                .with_transactions(vec![])
+                .with_hash()
+                .build();
 
-            // first (Genesis block), do not increment it's index and leave it's block.previous_hash to zero
-            let block = if !is_genesis {
-                let block = BlockBuilder::new(block_index)
-                    .with_nonce(0)
-                    .with_previous_hash(previous_hash)
-                    .with_timestamp()
-                    .with_transactions(vec![])
-                    .with_hash()
-                    .build();
-                previous_hash = block.hash.clone(); // possible performance impact because of .clone(), FIXME
-                block_index += 1;
+            previous_hash = block.hash;
+            block_index += 1;
 
-                tracing::debug!("Block:\n{:#?}", block);
-
-                block
-            } else {
-                is_genesis = false;
-                let block = BlockBuilder::new_genesis()
-                    .with_nonce(0)
-                    .with_previous_hash(previous_hash)
-                    .with_timestamp()
-                    .with_transactions(vec![])
-                    .with_hash()
-                    .build();
-                previous_hash = block.hash.clone(); // possible performance impact because of .clone(), FIXME
-                block_index += 1;
-                tracing::debug!("Genesis Block:\n{:#?}", block);
-
-                block
-            };
+            tracing::debug!("Block:\n{:#?}", block);
 
             match state.tx.send(block.clone()) {
                 Ok(_) => tracing::debug!("Sent: {:#?}", block),
                 Err(err) => tracing::debug!("Error sending block: {}", err),
             }
+
+            tokio::time::sleep(time::Duration::from_secs(3)).await;
         }
     })
 }
