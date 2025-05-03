@@ -5,7 +5,7 @@ edition.workspace = true
 
 [dependencies]
 serde = { workspace = true, features = ["derive"] }
-axum = { workspace = true, features = ["__private", "ws"] }
+axum = { workspace = true, features = ["__private", "ws", "macros"] }
 axum-server = { workspace = true }
 futures-util = { workspace = true }
 serde_json = { workspace = true }

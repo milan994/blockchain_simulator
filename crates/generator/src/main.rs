@@ -3,13 +3,19 @@
 //! All implementation is in one file (this one) since it is a small exercise.
 use axum::{
     Router,
-    extract::ws::{Message, WebSocket, WebSocketUpgrade},
+    extract::{
+        State,
+        ws::{Message, WebSocket, WebSocketUpgrade},
+    },
     response::Response,
     routing::any,
 };
 use core::time;
 use sha2::{Digest, Sha256};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 use tokio::{sync::broadcast, task::JoinHandle};
 
 /// Simulated blockchain block.
@@ -142,12 +148,11 @@ struct AppState {
 #[tokio::main]
 async fn main() {
     let (tx, _) = broadcast::channel::<Block>(100); // capacity 100 just for the exercise
-    let state = AppState { tx: tx.clone() };
+    let state = Arc::new(AppState { tx });
 
-    let state_clone = state.clone();
-    let app = Router::new().route("/ws", any(move |ws| handler(ws, state_clone)));
+    let app = Router::new().route("/ws", any(handler).with_state(Arc::clone(&state)));
 
-    let task_join_handle = block_generator(state.clone()).await;
+    let task_join_handle = block_generator(state).await;
 
     let addr = "127.0.0.1:7879".parse().unwrap();
 
@@ -171,7 +176,8 @@ async fn main() {
 /// The 'ws' is used to Upgrade connection to WebSocket.
 /// The 'state' is used to forward it further to the callback in order to create Receiver
 /// on the Transmiter which transmits 'Block'.
-async fn handler(ws: WebSocketUpgrade, state: AppState) -> Response {
+#[axum::debug_handler]
+async fn handler(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) -> Response {
     ws.on_upgrade(|socket| handle_socket(socket, state))
 }
 
@@ -179,7 +185,7 @@ async fn handler(ws: WebSocketUpgrade, state: AppState) -> Response {
 ///
 /// 'socket' is WebSocket used to send data to all clients.///
 /// 'state' is used to create the Receiver which is going to receive newly created 'Block'.
-async fn handle_socket(mut socket: WebSocket, state: AppState) {
+async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
     let mut rx = state.tx.subscribe();
     while let Ok(block) = rx.recv().await {
         // comparing to format! json format looks cleaner
@@ -196,7 +202,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
 /// Used to create new 'Block' and to send it over the channel.
 ///
 /// 'state' is used to transmit newly created 'Block'.
-async fn block_generator(state: AppState) -> JoinHandle<()> {
+async fn block_generator(state: Arc<AppState>) -> JoinHandle<()> {
     let mut is_genesis: bool = true;
     let mut previous_hash: String = String::from("0");
     let mut block_index: u64 = 0;

@@ -24,7 +24,7 @@ edition = "2024"
 # [dependencies]
 # sha2 = { workspace = true, features = ["some_feat"] }
 [workspace.dependencies]
-axum = { version = "0.8.3", features = ["__private", "ws"] }
+axum = { version = "0.8.3", features = ["__private", "ws", "macros"] }
 axum-server = "0.7.2"
 futures-util = "0.3.31"
 serde = { version = "1.0.219", features = ["derive"] }
