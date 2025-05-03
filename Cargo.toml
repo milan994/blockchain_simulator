@@ -1,9 +1,29 @@
-[package]
-name = "blockchain_simulator"
+[workspace]
+# Stavio sam crate-ove u `crates/` direktorijum posto cesto workspace ima vise od samo crate-ova,
+# pa je zgodno imati ih sve na jednom mestu.
+members = [
+    # Ovo je binary koji je do sad bio ceo ovaj repo
+    "crates/generator",
+    # Ovo sam napravio kao primer i tu bi isao onaj drugi repo (ne moras da trosis vreme na to, dajem samo primer)
+    "crates/node",
+]
+
+# Ovako mozes da definises `package` field za ceo workspace, posle u 
+# svakom pojedinacnom crate-u radis nesto kao:
+#
+# [package]
+# version.workspace = true
+# edition.workspace = true
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
 
-[dependencies]
+# Ista prica kao za `package` field, nekad zelis da koristis isti dependency u vise crate-ova, i ne zelis svuda da manage-ujes verzije pojedinacno.
+# Ovako mozes da definises neke dependency-e na workspace nivou i onda u crate-u gde ti treba kazes nesto kao:
+#
+# [dependencies]
+# sha2 = { workspace = true, features = ["some_feat"] }
+[workspace.dependencies]
 axum = { version = "0.8.3", features = ["__private", "ws"] }
 axum-server = "0.7.2"
 futures-util = "0.3.31"
