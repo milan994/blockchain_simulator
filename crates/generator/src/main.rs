@@ -164,8 +164,8 @@ async fn main() {
         .unwrap();
 
     match task_join_handle.await {
-        Ok(_) => println!("Successful creation of a blockchain!\n"),
-        Err(err) => println!("Error: {err}\n"),
+        Ok(_) => println!("Successful creation of a blockchain!"),
+        Err(err) => println!("Error: {err}"),
     }
 }
 
@@ -203,7 +203,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
 ///
 /// 'state' is used to transmit newly created 'Block'.
 async fn block_generator(state: Arc<AppState>) -> JoinHandle<()> {
-    tracing::debug!("Entering block_generator\n");
+    tracing::debug!("Entering block_generator");
 
     tokio::spawn(async move {
         tracing::debug!("Entering tokio async task");
@@ -217,7 +217,7 @@ async fn block_generator(state: Arc<AppState>) -> JoinHandle<()> {
             .with_transactions(vec![])
             .with_hash()
             .build();
-        tracing::debug!("Genesis Block:\n{:#?}", genesis);
+        tracing::debug!("Genesis Block:{:#?}", genesis);
 
         match state.tx.send(genesis.clone()) {
             Ok(_) => tracing::debug!("Sent: {:#?}", genesis),
@@ -230,7 +230,7 @@ async fn block_generator(state: Arc<AppState>) -> JoinHandle<()> {
         tokio::time::sleep(time::Duration::from_secs(3)).await;
 
         loop {
-            tracing::debug!("Entering loop\n");
+            tracing::debug!("Entering loop");
 
             let block = BlockBuilder::new(block_index)
                 .with_nonce(0)
@@ -243,7 +243,7 @@ async fn block_generator(state: Arc<AppState>) -> JoinHandle<()> {
             previous_hash = block.hash;
             block_index += 1;
 
-            tracing::debug!("Block:\n{:#?}", block);
+            tracing::debug!("Block:{:#?}", block);
 
             match state.tx.send(block.clone()) {
                 Ok(_) => tracing::debug!("Sent: {:#?}", block),
